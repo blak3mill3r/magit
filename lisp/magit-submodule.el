@@ -243,8 +243,9 @@ Offer to initialize MODULE if it's not checked out yet."
             (not (y-or-n-p (format "Setup submodule '%s' first?"
                                    module))))
         (magit-diff-visit-directory path other-window)
-      (magit-submodule-setup module)
+      (magit-run-git-async "submodule" "update" "--init" "--" module)
       (set-process-sentinel
+       magit-this-process
        (lambda (process event)
          (when (memq (process-status process) '(exit signal))
            (let ((magit-process-raise-error t))
