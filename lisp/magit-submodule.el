@@ -66,16 +66,19 @@ an alist that supports the keys `:right-align' and `:pad-right'."
   'magit-commands nil nil
   :man-page "git-submodule"
   :actions  '("Setup"
-              (?a "Add"    magit-submodule-add)
-              (?b "Setup"  magit-submodule-setup)
+              (?a "Add"    magit-submodule-add) nil
+              (?b "Setup"  magit-submodule-setup) nil
               "Configure"
-              (?i "Init"   magit-submodule-init)
-              (?s "Sync"   magit-submodule-sync)
-              (?d "Deinit" magit-submodule-deinit)
+              (?i "Init"   magit-submodule-init) nil
+              (?s "Sync"   magit-submodule-sync) nil
+              (?d "Deinit" magit-submodule-deinit) nil
               "Update"
-              (?u "Update" magit-submodule-update)
-              (?f "Fetch"  magit-submodule-fetch))
-  :max-action-columns 1)
+              (?u "Update"     magit-submodule-update)
+              (?U "Update all" magit-submodule-update-all)
+              (?F "Pull"       magit-submodule-update-remote)
+              (?R "Pull all"   magit-submodule-update-all-remote) nil
+              (?f "Fetch all"  magit-submodule-fetch))
+  :max-action-columns 2)
 
 ;;;; Setup
 
@@ -154,12 +157,67 @@ PATH also becomes the name."
 ;;;; Update
 
 ;;;###autoload
-(defun magit-submodule-update (&optional init)
-  "Clone missing submodules and checkout appropriate commits.
-With a prefix argument also register submodules in \".git/config\"."
-  (interactive "P")
+(defun magit-submodule-update (module method &optional opts)
+  "Update MODULE by METHOD to recorded target revision.
+METHOD may be `checkout', `merge', `rebase', or `reset'.  When
+called from lisp, MODULE may be a list of submodules."
+  (interactive (magit-submodule-update-read-args))
   (magit-with-toplevel
-    (magit-run-git-async "submodule" "update" (and init "--init"))))
+    (magit-run-git-async
+     (--mapcat (list
+                "-c" (format "submodule.%s.update=%s"
+                             (magit-submodule-get-name it)
+                             (pcase method
+                               (`reset "!git reset --keep")
+                               (_ (symbol-name method)))))
+               (if (listp module) module (list module)))
+     "submodule" "update" opts "--" module)))
+
+;;;###autoload
+(defun magit-submodule-update-remote (module method)
+  "Update MODULE by METHOD to submodule's remote revision.
+METHOD may be `checkout', `merge', `rebase', or `reset'."
+  (interactive (magit-submodule-update-read-args))
+  (magit-submodule-update module method "--remote"))
+
+;;;###autoload
+(defun magit-submodule-update-all (method)
+  "Update all submodules by METHOD to recorded target revision.
+METHOD may be `checkout', `merge', `rebase', or `reset'."
+  (interactive (magit-submodule-update-read-method))
+  (magit-submodule-update (magit-get-submodules) method nil))
+
+;;;###autoload
+(defun magit-submodule-update-all-remote (method)
+  "Update all submodules by METHOD to submodule's remote revision.
+METHOD may be `checkout', `merge', `rebase', or `reset'."
+  (interactive (magit-submodule-update-read-method))
+  (magit-submodule-update (magit-get-submodules) method t))
+
+(defun magit-submodule-get-name (module)
+  ;; Find submodule.<name>.path = <module> in `.gitmodules'.
+  (cadr (split-string
+         (car (or (magit-git-items "config" "-z" "-f" ".gitmodules"
+                                   "--get-regexp" "^submodule\\..*\\.path$"
+                                   (concat "^" (regexp-quote module) "$"))
+                  (error "No such submodule `%s'" module)))
+         "\n")))
+
+(defun magit-submodule-read-module-path (prompt)
+  (or (magit-section-when module)
+      (magit-completing-read prompt (magit-get-submodules))))
+
+(defun magit-submodule-update-read-method (&optional prompt)
+  (list (magit-read-char-case (or prompt "Update submodules by ") t
+          (?c "[c]heckout" 'checkout)
+          (?m "[m]erge"    'merge)
+          (?r "[r]ebase"   'rebase)
+          (?s "[x] reset"  'reset))))
+
+(defun magit-submodule-update-read-args ()
+  (let ((module (magit-submodule-read-module-path "Update submodule")))
+    (cons module (magit-submodule-update-read-method
+                  (format "Update submodule `%s' by " module)))))
 
 ;;;###autoload
 (defun magit-submodule-fetch (&optional all)
