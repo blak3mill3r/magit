@@ -2221,6 +2221,8 @@ last (visual) lines of the region.  In Emacs 24, using this
 method causes `move-end-of-line' to jump to the next line, so
 we only use it in Emacs 25 where that glitch was fixed (see
 https://github.com/magit/magit/pull/2293 for more details)."
+  ;; It's expected that this gets called on every redisplay.
+  ;; I.e. over and over gain, until the region is deactivated.
   (if (window-system)
       (let* ((beg (magit-diff-hunk-region-beginning))
              (end (magit-diff-hunk-region-end))
@@ -2231,6 +2233,9 @@ https://github.com/magit/magit/pull/2293 for more details)."
                                       (beginning-of-visual-line)
                                       (point)))
              (color (face-background 'magit-diff-lines-boundary nil t)))
+        (message "%s-%s %s-%s" beg beg-eol end-bol end)
+        (dolist (ov magit-region-overlays) ;; go-to eol to scroll ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+          (message "  %s" ov))
         (cl-flet ((ln (b e &rest face)
                       (magit-diff--make-hunk-overlay
                        b e 'face face 'after-string
@@ -2238,6 +2243,10 @@ https://github.com/magit/magit/pull/2293 for more details)."
           (if (= beg end-bol)
               (ln beg beg-eol :overline color :underline color)
             (ln beg beg-eol :overline color)
+            ;; The previous two calls to `window-hscroll' did
+            ;; not "increase its value", this one does (when
+            ;; going from a position that requires scrolling
+            ;; to one that does not).
             (ln end-bol end :underline color))))
     (magit-diff-highlight-hunk-region-using-face section)))
 
@@ -2249,6 +2258,10 @@ https://github.com/magit/magit/pull/2293 for more details)."
     ov))
 
 (defun magit-diff--hunk-after-string (face)
+  ;; Should this really return something like `(+ (833) 135)'?
+  ;; I don't really understand "Pixel Specification for Spaces".
+  (message "  %s" `(+ (,(window-body-width nil t))
+                      ,(window-hscroll)))
   (propertize "\s"
               'face face
               'display (list 'space :align-to `(+ (,(window-body-width nil t))
